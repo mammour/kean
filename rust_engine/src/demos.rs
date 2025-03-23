@@ -7,6 +7,7 @@ use crate::property::{Property, PropertyValue};
 use crate::tag::TagCollection;
 use crate::coordinates::Coordinates;
 use crate::utils;
+use super::files::{AssetManager, AssetType, Asset};
 
 pub fn demo_tag_system() {
     println!("\n=== TAG SYSTEM DEMO ===\n");
@@ -301,4 +302,106 @@ pub fn demo_game_state() {
         let response = game_state.process_command(cmd);
         println!("{}", response);
     }
+}
+
+// Add a new demo function for asset management at the end of the file
+pub fn demo_asset_management() {
+    println!("\n=== ASSET MANAGEMENT DEMO ===\n");
+    
+    // Create a new asset manager
+    let mut asset_manager = AssetManager::new();
+    println!("Created AssetManager with default paths:");
+    println!("- Images: assets/images");
+    println!("- Sounds: assets/sounds");
+    println!("- Videos: assets/videos");
+    
+    // Showcase path handling
+    println!("\nDemonstrating path handling:");
+    let image_path = asset_manager.get_asset_path(AssetType::Image, "player/character.png");
+    let sound_path = asset_manager.get_asset_path(AssetType::Sound, "effects/explosion.wav");
+    let video_path = asset_manager.get_asset_path(AssetType::Video, "cutscenes/intro.mp4");
+    
+    println!("- Image path: {:?}", image_path);
+    println!("- Sound path: {:?}", sound_path);
+    println!("- Video path: {:?}", video_path);
+    
+    // Demonstrate asset loading simulation
+    println!("\nSimulating asset loading (note: no actual files loaded):");
+    println!("(In a real game, you would load actual files from disk)");
+    
+    // Create a simulated asset for demonstration
+    let test_data = vec![1, 2, 3, 4, 5]; // Simulated binary data
+    let test_asset = Asset::new(
+        AssetType::Image, 
+        "assets/images/test.png", 
+        "test_image".to_string(), 
+        test_data
+    ).with_metadata("width", "128")
+     .with_metadata("height", "128")
+     .with_metadata("format", "png");
+    
+    // Add the asset manually to the manager for demonstration
+    asset_manager.assets.insert("test_image".to_string(), test_asset);
+    
+    // Show asset access
+    println!("\nAccessing loaded asset:");
+    if let Some(asset) = asset_manager.get_asset("test_image") {
+        println!("- Name: {}", asset.name);
+        println!("- Type: {:?}", asset.asset_type);
+        println!("- Path: {:?}", asset.path);
+        println!("- Data size: {} bytes", asset.data.len());
+        println!("- Metadata:");
+        for (key, value) in &asset.metadata {
+            println!("  * {}: {}", key, value);
+        }
+    }
+    
+    // Demonstrate asset duplication and transformation
+    println!("\nDuplicating and transforming assets:");
+    match asset_manager.duplicate_asset("test_image", "transformed_image") {
+        Ok(_) => {
+            // Apply a transformation to the duplicated asset
+            if let Ok(_) = asset_manager.transform_asset("transformed_image", |asset| {
+                // Simulated transformation - just change metadata
+                asset.metadata.insert("width".to_string(), "256".to_string());
+                asset.metadata.insert("height".to_string(), "256".to_string());
+                asset.metadata.insert("transformed".to_string(), "true".to_string());
+                // In a real implementation, we would modify the actual asset data
+            }) {
+                if let Some(asset) = asset_manager.get_asset("transformed_image") {
+                    println!("- Name: {}", asset.name);
+                    println!("- Metadata after transformation:");
+                    for (key, value) in &asset.metadata {
+                        println!("  * {}: {}", key, value);
+                    }
+                }
+            }
+        },
+        Err(e) => println!("Error duplicating asset: {:?}", e),
+    }
+    
+    // Demonstrate asset organization by type
+    println!("\nAsset organization by type:");
+    println!("- Images would be stored in: assets/images/");
+    println!("- Sounds would be stored in: assets/sounds/");
+    println!("- Videos would be stored in: assets/videos/");
+    
+    // Show examples of how to use assets in games
+    println!("\nExample usage in games:");
+    println!("1. Load game sprites: asset_manager.load_asset(AssetType::Image, \"player.png\", None)");
+    println!("2. Play sound effect: audio_system.play(asset_manager.get_asset(\"explosion.wav\"))");
+    println!("3. Stream video: video_player.play(asset_manager.get_asset(\"intro.mp4\"))");
+    
+    // Example for the updated load_directory function
+    println!("\nLoading assets from a directory:");
+    println!("let asset_names = asset_manager.load_directory(AssetType::Sound, \"effects\")");
+    println!("// Would return a Vec<String> with all asset names loaded");
+    
+    // Cleanup
+    println!("\nClearing all assets...");
+    asset_manager.clear();
+    println!("Asset manager now contains {} assets", 
+             asset_manager.assets.len());
+             
+    println!("\nAsset management system ready for your game development!");
 } 

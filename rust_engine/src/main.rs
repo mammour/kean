@@ -10,6 +10,7 @@ mod utils;
 mod coordinates;
 mod demos;
 mod game_state;
+mod files;
 
 use std::time::{Instant, Duration};
 use std::thread;
@@ -18,7 +19,12 @@ use game_state::GameState;
 
 fn main() {
     println!("Starting game backend service...");
+    println!("Running asset management demo to test functionality:");
     
+    // Run the asset management demo to test it
+    demos::demo_asset_management();
+    
+    // Create game state
     let mut game_state = GameState::new();
     let target_fps = 10; // Update at 10 frames per second
     let frame_duration = Duration::from_secs_f32(1.0 / target_fps as f32);

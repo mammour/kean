@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use crate::property::Property;
 use serde::{Serialize, Deserialize};
+use crate::stats::StatValue as Stats_StatValue;
 
 // Tag structure with ID, name, and properties
 #[derive(Clone, Serialize, Deserialize)]
@@ -147,5 +148,183 @@ impl TagCollection {
     pub fn filter_tags<F>(&self, filter: F) -> Vec<&Tag>
     where F: Fn(&Tag) -> bool {
         self.tags.values().filter(|tag| filter(tag)).collect()
+    }
+    
+    // Get the number of tags in the collection
+    pub fn tag_count(&self) -> usize {
+        self.tags.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::property::{Property, PropertyType, PropertyValue};
+    use crate::stats::StatValue as Stats_StatValue;
+
+    #[test]
+    fn test_tag_creation() {
+        let tag = Tag::new(1, "fire");
+        
+        assert_eq!(tag.id, 1);
+        assert_eq!(tag.name, "fire");
+        assert_eq!(tag.properties.len(), 0);
+        assert_eq!(tag.metadata.len(), 0);
+    }
+
+    #[test]
+    fn test_tag_with_properties() {
+        let property = Property::stat_modifier("damage", Stats_StatValue::Integer(5));
+        
+        let tag = Tag::new(1, "fire")
+            .with_property(property);
+        
+        assert_eq!(tag.properties.len(), 1);
+        if let PropertyValue::Stat(name, _) = &tag.properties[0].value {
+            assert_eq!(name, "damage");
+        } else {
+            panic!("Expected Stat property type");
+        }
+    }
+
+    #[test]
+    fn test_tag_with_metadata() {
+        let tag = Tag::new(1, "fire")
+            .with_metadata("element", "fire")
+            .with_metadata("color", "#FF4500");
+        
+        assert_eq!(tag.metadata.len(), 2);
+        assert_eq!(tag.metadata.get("element"), Some(&"fire".to_string()));
+        assert_eq!(tag.metadata.get("color"), Some(&"#FF4500".to_string()));
+    }
+
+    #[test]
+    fn test_tag_get_properties_in_context() {
+        let property1 = Property::stat_modifier("damage", Stats_StatValue::Integer(5))
+            .with_context("combat");
+        
+        let property2 = Property::stat_modifier("speed", Stats_StatValue::Float(0.8))
+            .with_context("movement");
+        
+        let property3 = Property::stat_modifier("resistance", Stats_StatValue::Integer(10))
+            .with_context("combat");
+        
+        let tag = Tag::new(1, "fire")
+            .with_property(property1)
+            .with_property(property2)
+            .with_property(property3);
+        
+        // Properties with "combat" context plus those with "default" context
+        let combat_properties = tag.get_properties_in_context("combat");
+        assert_eq!(combat_properties.len(), 3);  // All 3 properties apply in their respective contexts or default
+        
+        // Check the property names
+        let prop_names: Vec<String> = combat_properties.iter()
+            .filter_map(|p| {
+                if let PropertyValue::Stat(name, _) = &p.value {
+                    Some(name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        
+        assert!(prop_names.contains(&"damage".to_string()));
+        assert!(prop_names.contains(&"resistance".to_string()));
+        assert!(prop_names.contains(&"speed".to_string())); // This is visible because of default context
+        
+        // Properties with "movement" context plus those with "default" context
+        let movement_properties = tag.get_properties_in_context("movement");
+        assert_eq!(movement_properties.len(), 3);  // All 3 properties apply
+    }
+
+    #[test]
+    fn test_tag_collection() {
+        let mut collection = TagCollection::new();
+        
+        // Add tags
+        let fire_id = collection.add_tag("fire");
+        let ice_id = collection.add_tag("ice");
+        let poison_id = collection.add_tag("poison");
+        
+        // Check IDs are sequential
+        assert_eq!(fire_id, 1);
+        assert_eq!(ice_id, 2);
+        assert_eq!(poison_id, 3);
+        
+        // Check tag count
+        assert_eq!(collection.tags.len(), 3);
+        
+        // Get tags
+        let fire_tag = collection.get_tag(fire_id).unwrap();
+        assert_eq!(fire_tag.name, "fire");
+        
+        let ice_tag = collection.get_tag(ice_id).unwrap();
+        assert_eq!(ice_tag.name, "ice");
+        
+        // Get non-existent tag should return None
+        assert!(collection.get_tag(99).is_none());
+    }
+
+    #[test]
+    fn test_tag_collection_modify_tags() {
+        let mut collection = TagCollection::new();
+        
+        // Add a tag
+        let tag_id = collection.add_tag("test");
+        
+        // Clone and modify the tag
+        if let Some(tag) = collection.get_tag(tag_id) {
+            let modified_tag = tag.clone().with_metadata("key", "value");
+            // Replace the original tag with the modified version
+            if let Some(mutable_tag) = collection.get_tag_mut(tag_id) {
+                *mutable_tag = modified_tag;
+            }
+        }
+        
+        // Check modification was applied
+        let tag = collection.get_tag(tag_id).unwrap();
+        assert_eq!(tag.metadata.get("key"), Some(&"value".to_string()));
+    }
+
+    #[test]
+    fn test_tag_collection_get_tags_in_context() {
+        let mut collection = TagCollection::new();
+        
+        // Add tags with properties
+        let fire_id = collection.add_tag("fire");
+        if let Some(tag) = collection.get_tag_mut(fire_id) {
+            let damage_property = Property::stat_modifier("damage", Stats_StatValue::Integer(5))
+                .with_context("combat");
+            *tag = tag.clone().with_property(damage_property);
+        }
+        
+        let ice_id = collection.add_tag("ice");
+        if let Some(tag) = collection.get_tag_mut(ice_id) {
+            let slow_property = Property::stat_modifier("slow", Stats_StatValue::Float(0.5))
+                .with_context("combat");
+            *tag = tag.clone().with_property(slow_property);
+        }
+        
+        let stone_id = collection.add_tag("stone");
+        if let Some(tag) = collection.get_tag_mut(stone_id) {
+            let weight_property = Property::stat_modifier("weight", Stats_StatValue::Integer(10))
+                .with_context("physics");
+            *tag = tag.clone().with_property(weight_property);
+        }
+        
+        // Get tags with combat context - will include all tags due to "default" context
+        let combat_tags = collection.get_tags_in_context("combat");
+        assert_eq!(combat_tags.len(), 3);  // All tags appear due to default context
+        assert!(combat_tags.iter().any(|t| t.name == "fire"));
+        assert!(combat_tags.iter().any(|t| t.name == "ice"));
+        assert!(combat_tags.iter().any(|t| t.name == "stone"));
+        
+        // Get tags with physics context - will include all tags due to "default" context
+        let physics_tags = collection.get_tags_in_context("physics");
+        assert_eq!(physics_tags.len(), 3);
+        assert!(physics_tags.iter().any(|t| t.name == "fire"));
+        assert!(physics_tags.iter().any(|t| t.name == "ice"));
+        assert!(physics_tags.iter().any(|t| t.name == "stone"));
     }
 } 

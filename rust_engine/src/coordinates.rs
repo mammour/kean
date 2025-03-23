@@ -264,4 +264,146 @@ impl fmt::Display for Coordinates {
         
         write!(f, ")")
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_creation_with_dimensions() {
+        // Test 2D creation
+        let coords_2d = Coordinates::new_2d(10.0, 20.0);
+        assert_eq!(coords_2d.dimensions(), 2);
+        assert_eq!(coords_2d.get(0), Some(10.0));
+        assert_eq!(coords_2d.get(1), Some(20.0));
+        
+        // Test 4D creation
+        let coords_4d = Coordinates::new_4d(1.0, 2.0, 3.0, 4.0);
+        assert_eq!(coords_4d.dimensions(), 4);
+        assert_eq!(coords_4d.get(0), Some(1.0));
+        assert_eq!(coords_4d.get(1), Some(2.0));
+        assert_eq!(coords_4d.get(2), Some(3.0));
+        assert_eq!(coords_4d.get(3), Some(4.0));
+    }
+    
+    #[test]
+    fn test_coordinate_set_get() {
+        let mut coords = Coordinates::new(3);
+        
+        // Set values and check them
+        assert_eq!(coords.set(0, 10.0), true);
+        assert_eq!(coords.set(1, 20.0), true);
+        assert_eq!(coords.set(2, 30.0), true);
+        
+        assert_eq!(coords.get(0), Some(10.0));
+        assert_eq!(coords.get(1), Some(20.0));
+        assert_eq!(coords.get(2), Some(30.0));
+        
+        // Out of bounds access should return None or false
+        assert_eq!(coords.get(3), None);
+        assert_eq!(coords.set(3, 40.0), false);
+    }
+    
+    #[test]
+    fn test_coordinate_labels() {
+        // Test setting labels during creation
+        let coords = Coordinates::new(4).with_labels(vec!["x", "y", "z", "time"]);
+        
+        // Test get/set by label
+        assert_eq!(coords.get_by_label("x"), Some(0.0));
+        assert_eq!(coords.get_by_label("y"), Some(0.0));
+        assert_eq!(coords.get_by_label("z"), Some(0.0));
+        assert_eq!(coords.get_by_label("time"), Some(0.0));
+        
+        // Test non-existent label
+        assert_eq!(coords.get_by_label("w"), None);
+        
+        // Test set by label
+        let mut coords2 = coords.clone();
+        assert_eq!(coords2.set_by_label("x", 100.0), true);
+        assert_eq!(coords2.set_by_label("y", 200.0), true);
+        assert_eq!(coords2.set_by_label("z", 300.0), true);
+        assert_eq!(coords2.set_by_label("time", 400.0), true);
+        
+        assert_eq!(coords2.get_by_label("x"), Some(100.0));
+        assert_eq!(coords2.get_by_label("y"), Some(200.0));
+        assert_eq!(coords2.get_by_label("z"), Some(300.0));
+        assert_eq!(coords2.get_by_label("time"), Some(400.0));
+        
+        // Non-existent label should return false
+        assert_eq!(coords2.set_by_label("w", 500.0), false);
+    }
+    
+    #[test]
+    fn test_distance_calculation() {
+        // Test 2D distance (Pythagorean)
+        let coords1 = Coordinates::new_2d(0.0, 0.0);
+        let coords2 = Coordinates::new_2d(3.0, 4.0);
+        assert_eq!(coords1.distance(&coords2), 5.0);
+        
+        // Test 3D distance
+        let coords3 = Coordinates::new_3d(0.0, 0.0, 0.0);
+        let coords4 = Coordinates::new_3d(2.0, 3.0, 6.0);
+        assert_eq!(coords3.distance(&coords4), 7.0);
+        
+        // Different dimensions should return NaN
+        let coords5 = Coordinates::new_2d(0.0, 0.0);
+        let coords6 = Coordinates::new_3d(1.0, 1.0, 1.0);
+        assert!(coords5.distance(&coords6).is_nan());
+    }
+    
+    #[test]
+    fn test_direction_vector() {
+        // Test horizontal direction (1, 0)
+        let start = Coordinates::new_2d(0.0, 0.0);
+        let target = Coordinates::new_2d(5.0, 0.0);
+        let direction = start.direction_to(&target).unwrap();
+        assert_eq!(direction.get(0), Some(1.0));
+        assert_eq!(direction.get(1), Some(0.0));
+        
+        // Test vertical direction (0, 1)
+        let start = Coordinates::new_2d(0.0, 0.0);
+        let target = Coordinates::new_2d(0.0, 5.0);
+        let direction = start.direction_to(&target).unwrap();
+        assert_eq!(direction.get(0), Some(0.0));
+        assert_eq!(direction.get(1), Some(1.0));
+        
+        // Test diagonal (normalized)
+        let start = Coordinates::new_2d(0.0, 0.0);
+        let target = Coordinates::new_2d(3.0, 4.0);
+        let direction = start.direction_to(&target).unwrap();
+        assert!((direction.get(0).unwrap() - 0.6).abs() < 0.0001); // ~3/5
+        assert!((direction.get(1).unwrap() - 0.8).abs() < 0.0001); // ~4/5
+    }
+    
+    #[test]
+    fn test_to_string() {
+        // Test default display
+        let coords = Coordinates::new_2d(1.5, 2.75);
+        assert_eq!(coords.to_string(), "(x:1.5, y:2.75)");
+        
+        // Test custom labels
+        let coords = Coordinates::new(2).with_labels(vec!["horizontal", "vertical"]);
+        let mut custom_coords = coords.clone();
+        custom_coords.set(0, 10.5);
+        custom_coords.set(1, 20.25);
+        assert_eq!(custom_coords.to_string(), "(horizontal:10.5, vertical:20.25)");
+    }
+    
+    #[test]
+    fn test_move_toward() {
+        // Test moving halfway to target
+        let mut coords = Coordinates::new_2d(0.0, 0.0);
+        let target = Coordinates::new_2d(10.0, 10.0);
+        
+        assert_eq!(coords.move_toward(&target, 5.0 * 2.0_f32.sqrt()), true);
+        assert!((coords.get(0).unwrap() - 5.0).abs() < 0.0001);
+        assert!((coords.get(1).unwrap() - 5.0).abs() < 0.0001);
+        
+        // Test moving to target
+        coords.move_toward(&target, 5.0 * 2.0_f32.sqrt());
+        assert!((coords.get(0).unwrap() - 10.0).abs() < 0.0001);
+        assert!((coords.get(1).unwrap() - 10.0).abs() < 0.0001);
+    }
 } 

@@ -10,6 +10,7 @@ pub mod utils;
 pub mod coordinates;
 pub mod demos;
 pub mod game_state;
+pub mod files;
 
 // Re-export commonly used structures
 pub use stats::{Stats, StatValue};
@@ -21,7 +22,7 @@ pub use calculated_stats::{CalculatedStats, StatModifier, ModifierType};
 pub use property::{Property, PropertyType, PropertyValue, Condition, ConditionType};
 pub use tag::{Tag, TagCollection};
 pub use coordinates::Coordinates;
-pub use demos::{demo_tag_system, showcase_different_game_mechanics, demo_game_state};
+pub use demos::{demo_tag_system, showcase_different_game_mechanics, demo_game_state, demo_asset_management};
 pub use game_state::GameState;
 pub use utils::{
     format_entity_with_tags, 
@@ -33,3 +34,4 @@ pub use utils::{
     find_entities_in_radius, 
     has_line_of_sight
 }; 
+pub use files::{Asset, AssetManager, AssetType, AssetResult, AssetError, transform_copy}; 
