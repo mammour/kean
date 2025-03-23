@@ -1,5 +1,6 @@
-use std::ops::{Add, Sub, Mul, Div};
+use std::ops::{Add, Sub, Mul, Div, Index, IndexMut};
 use std::fmt;
+use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
 /// A flexible coordinate system that can represent positions in any number of dimensions
@@ -8,7 +9,10 @@ pub struct Coordinates {
     /// The values for each dimension
     pub values: Vec<f32>,
     /// Optional labels for each dimension (e.g., "x", "y", "z", "time", etc.)
-    pub labels: Option<Vec<String>>,
+    pub labels: Option<HashMap<String, usize>>,
+    /// Optional original order of labels
+    #[serde(skip)]
+    label_order: Option<Vec<String>>,
 }
 
 impl Coordinates {
@@ -17,60 +21,94 @@ impl Coordinates {
         Coordinates {
             values: vec![0.0; dimensions],
             labels: None,
+            label_order: None,
+        }
+    }
+    
+    /// Create an empty coordinates instance with zero dimensions
+    pub fn empty() -> Self {
+        Coordinates {
+            values: Vec::new(),
+            labels: None,
+            label_order: None,
         }
     }
     
     /// Create coordinates with the given values
-    pub fn from_values(values: Vec<f32>) -> Self {
+    pub fn from_values<T: Into<Vec<f32>>>(values: T) -> Self {
         Coordinates {
-            values,
+            values: values.into(),
             labels: None,
+            label_order: None,
         }
     }
     
     /// Create 1D coordinates
     pub fn new_1d(x: f32) -> Self {
-        Coordinates {
-            values: vec![x],
-            labels: Some(vec!["x".to_string()]),
-        }
+        let mut coord = Coordinates::from_values(vec![x]);
+        coord.set_labels(vec!["x"]);
+        coord
     }
     
     /// Create 2D coordinates
     pub fn new_2d(x: f32, y: f32) -> Self {
-        Coordinates {
-            values: vec![x, y],
-            labels: Some(vec!["x".to_string(), "y".to_string()]),
-        }
+        let mut coord = Coordinates::from_values(vec![x, y]);
+        coord.set_labels(vec!["x", "y"]);
+        coord
     }
     
     /// Create 3D coordinates
     pub fn new_3d(x: f32, y: f32, z: f32) -> Self {
-        Coordinates {
-            values: vec![x, y, z],
-            labels: Some(vec!["x".to_string(), "y".to_string(), "z".to_string()]),
-        }
+        let mut coord = Coordinates::from_values(vec![x, y, z]);
+        coord.set_labels(vec!["x", "y", "z"]);
+        coord
     }
     
     /// Create 4D coordinates (including time)
     pub fn new_4d(x: f32, y: f32, z: f32, t: f32) -> Self {
-        Coordinates {
-            values: vec![x, y, z, t],
-            labels: Some(vec!["x".to_string(), "y".to_string(), "z".to_string(), "t".to_string()]),
+        let mut coord = Coordinates::from_values(vec![x, y, z, t]);
+        coord.set_labels(vec!["x", "y", "z", "t"]);
+        coord
+    }
+    
+    /// Set dimension labels
+    pub fn set_labels<S: AsRef<str>>(&mut self, labels: Vec<S>) -> &mut Self {
+        if labels.len() != self.values.len() {
+            return self; // Cannot set labels if count doesn't match
         }
+        
+        let mut label_map = HashMap::new();
+        let mut order = Vec::new();
+        
+        for (i, label) in labels.iter().enumerate() {
+            let label_str = label.as_ref().to_string();
+            label_map.insert(label_str.clone(), i);
+            order.push(label_str);
+        }
+        
+        self.labels = Some(label_map);
+        self.label_order = Some(order);
+        self
     }
     
     /// Create coordinates with custom dimension labels
-    pub fn with_labels(mut self, labels: Vec<&str>) -> Self {
-        if labels.len() == self.values.len() {
-            self.labels = Some(labels.iter().map(|&s| s.to_string()).collect());
-        }
+    pub fn with_labels<S: AsRef<str>>(mut self, labels: Vec<S>) -> Self {
+        self.set_labels(labels);
         self
     }
     
     /// Get the number of dimensions
     pub fn dimensions(&self) -> usize {
         self.values.len()
+    }
+    
+    /// Check if the coordinates has a specific dimension by label
+    pub fn has_dimension(&self, label: &str) -> bool {
+        if let Some(labels) = &self.labels {
+            labels.contains_key(label)
+        } else {
+            false
+        }
     }
     
     /// Get a value for a specific dimension by index
@@ -91,10 +129,8 @@ impl Coordinates {
     /// Get a value for a dimension by label
     pub fn get_by_label(&self, label: &str) -> Option<f32> {
         if let Some(labels) = &self.labels {
-            for (i, l) in labels.iter().enumerate() {
-                if l == label {
-                    return self.values.get(i).copied();
-                }
+            if let Some(&index) = labels.get(label) {
+                return self.values.get(index).copied();
             }
         }
         None
@@ -103,14 +139,101 @@ impl Coordinates {
     /// Set a value for a dimension by label
     pub fn set_by_label(&mut self, label: &str, value: f32) -> bool {
         if let Some(labels) = &self.labels {
-            for (i, l) in labels.iter().enumerate() {
-                if l == label && i < self.values.len() {
-                    self.values[i] = value;
+            if let Some(&index) = labels.get(label) {
+                if index < self.values.len() {
+                    self.values[index] = value;
                     return true;
                 }
             }
         }
         false
+    }
+    
+    /// Add a new dimension to the coordinates
+    pub fn add_dimension(&mut self, value: f32, label: Option<String>) -> usize {
+        let index = self.values.len();
+        self.values.push(value);
+        
+        if let Some(label_str) = label {
+            if self.labels.is_none() {
+                self.labels = Some(HashMap::new());
+                self.label_order = Some(Vec::new());
+            }
+            
+            if let Some(labels) = &mut self.labels {
+                labels.insert(label_str.clone(), index);
+            }
+            
+            if let Some(order) = &mut self.label_order {
+                order.push(label_str);
+            }
+        }
+        
+        index
+    }
+    
+    /// Remove a dimension by index
+    pub fn remove_dimension(&mut self, index: usize) -> Option<f32> {
+        if index >= self.values.len() {
+            return None;
+        }
+        
+        let value = self.values.remove(index);
+        
+        // Update labels if they exist
+        if let Some(labels) = &mut self.labels {
+            // Remove the label that points to this index
+            let mut label_to_remove = None;
+            for (label, &i) in labels.iter() {
+                if i == index {
+                    label_to_remove = Some(label.clone());
+                    break;
+                }
+            }
+            
+            if let Some(label) = label_to_remove {
+                labels.remove(&label);
+                
+                if let Some(order) = &mut self.label_order {
+                    if let Some(pos) = order.iter().position(|l| l == &label) {
+                        order.remove(pos);
+                    }
+                }
+            }
+            
+            // Update indices for dimensions after the removed one
+            for i in labels.values_mut() {
+                if *i > index {
+                    *i -= 1;
+                }
+            }
+        }
+        
+        Some(value)
+    }
+    
+    /// Remove a dimension by label
+    pub fn remove_dimension_by_label(&mut self, label: &str) -> Option<f32> {
+        if let Some(labels) = &self.labels {
+            if let Some(&index) = labels.get(label) {
+                return self.remove_dimension(index);
+            }
+        }
+        None
+    }
+    
+    /// Get all dimension labels in order
+    pub fn dimension_labels(&self) -> Vec<String> {
+        if let Some(order) = &self.label_order {
+            order.clone()
+        } else if let Some(labels) = &self.labels {
+            // Sort by index if we don't have order
+            let mut pairs: Vec<_> = labels.iter().collect();
+            pairs.sort_by_key(|&(_, &index)| index);
+            pairs.into_iter().map(|(label, _)| label.clone()).collect()
+        } else {
+            Vec::new()
+        }
     }
     
     /// Calculate the distance between two sets of coordinates
@@ -147,6 +270,7 @@ impl Coordinates {
         Some(Coordinates {
             values: direction,
             labels: self.labels.clone(),
+            label_order: self.label_order.clone(),
         })
     }
     
@@ -242,27 +366,72 @@ impl Div<f32> for Coordinates {
     }
 }
 
+// Index access for easier coordinate values
+impl Index<usize> for Coordinates {
+    type Output = f32;
+    
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.values[index]
+    }
+}
+
+// Mutable index access
+impl IndexMut<usize> for Coordinates {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.values[index]
+    }
+}
+
 impl fmt::Display for Coordinates {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "(")?;
         
-        if let Some(labels) = &self.labels {
-            for (i, (value, label)) in self.values.iter().zip(labels.iter()).enumerate() {
-                if i > 0 {
-                    write!(f, ", ")?;
+        if self.dimensions() == 0 {
+            write!(f, "empty")?;
+        } else if let Some(labels) = &self.labels {
+            let label_order = self.dimension_labels();
+            
+            for (i, label) in label_order.iter().enumerate() {
+                if let Some(&index) = labels.get(label) {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    if let Some(value) = self.values.get(index) {
+                        write!(f, "{}:{}", label, value)?;
+                    }
                 }
-                write!(f, "{}:{}", label, value)?;
             }
         } else {
+            // No labels, just show values
             for (i, value) in self.values.iter().enumerate() {
                 if i > 0 {
                     write!(f, ", ")?;
                 }
-                write!(f, "{}", value)?;
+                write!(f, "{}:{}", i, value)?;
             }
         }
         
         write!(f, ")")
+    }
+}
+
+// Add iterator support for coordinates
+impl IntoIterator for Coordinates {
+    type Item = f32;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+    
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.into_iter()
+    }
+}
+
+// Add borrow iterator for coordinates
+impl<'a> IntoIterator for &'a Coordinates {
+    type Item = &'a f32;
+    type IntoIter = std::slice::Iter<'a, f32>;
+    
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.iter()
     }
 }
 
@@ -285,6 +454,10 @@ mod tests {
         assert_eq!(coords_4d.get(1), Some(2.0));
         assert_eq!(coords_4d.get(2), Some(3.0));
         assert_eq!(coords_4d.get(3), Some(4.0));
+        
+        // Test empty coordinates
+        let empty = Coordinates::empty();
+        assert_eq!(empty.dimensions(), 0);
     }
     
     #[test]
@@ -303,6 +476,58 @@ mod tests {
         // Out of bounds access should return None or false
         assert_eq!(coords.get(3), None);
         assert_eq!(coords.set(3, 40.0), false);
+        
+        // Test index access
+        assert_eq!(coords[0], 10.0);
+        assert_eq!(coords[1], 20.0);
+        assert_eq!(coords[2], 30.0);
+        
+        // Test index mut access
+        coords[0] = 15.0;
+        assert_eq!(coords[0], 15.0);
+    }
+    
+    #[test]
+    fn test_add_remove_dimensions() {
+        let mut coords = Coordinates::empty();
+        
+        // Add dimensions
+        let x_index = coords.add_dimension(10.0, Some("x".to_string()));
+        assert_eq!(x_index, 0);
+        assert_eq!(coords.dimensions(), 1);
+        
+        let y_index = coords.add_dimension(20.0, Some("y".to_string()));
+        assert_eq!(y_index, 1);
+        assert_eq!(coords.dimensions(), 2);
+        
+        let z_index = coords.add_dimension(30.0, Some("z".to_string()));
+        assert_eq!(z_index, 2);
+        assert_eq!(coords.dimensions(), 3);
+        
+        // Test access by label
+        assert_eq!(coords.get_by_label("x"), Some(10.0));
+        assert_eq!(coords.get_by_label("y"), Some(20.0));
+        assert_eq!(coords.get_by_label("z"), Some(30.0));
+        
+        // Remove dimension by label
+        let removed = coords.remove_dimension_by_label("y");
+        assert_eq!(removed, Some(20.0));
+        assert_eq!(coords.dimensions(), 2);
+        
+        // Labels should be updated
+        assert_eq!(coords.get_by_label("x"), Some(10.0));
+        assert_eq!(coords.get_by_label("y"), None);
+        assert_eq!(coords.get_by_label("z"), Some(30.0));
+        
+        // Add a new dimension
+        let w_index = coords.add_dimension(40.0, Some("w".to_string()));
+        assert_eq!(w_index, 2);
+        assert_eq!(coords.dimensions(), 3);
+        
+        // Check the current state
+        assert_eq!(coords.get(0), Some(10.0)); // x
+        assert_eq!(coords.get(1), Some(30.0)); // z (moved up)
+        assert_eq!(coords.get(2), Some(40.0)); // w (new)
     }
     
     #[test]
@@ -333,6 +558,10 @@ mod tests {
         
         // Non-existent label should return false
         assert_eq!(coords2.set_by_label("w", 500.0), false);
+        
+        // Test label order
+        let labels = coords2.dimension_labels();
+        assert_eq!(labels, vec!["x", "y", "z", "time"]);
     }
     
     #[test]
@@ -351,6 +580,11 @@ mod tests {
         let coords5 = Coordinates::new_2d(0.0, 0.0);
         let coords6 = Coordinates::new_3d(1.0, 1.0, 1.0);
         assert!(coords5.distance(&coords6).is_nan());
+        
+        // Empty coordinates
+        let empty1 = Coordinates::empty();
+        let empty2 = Coordinates::empty();
+        assert_eq!(empty1.distance(&empty2), 0.0);
     }
     
     #[test]
@@ -389,6 +623,10 @@ mod tests {
         custom_coords.set(0, 10.5);
         custom_coords.set(1, 20.25);
         assert_eq!(custom_coords.to_string(), "(horizontal:10.5, vertical:20.25)");
+        
+        // Test empty coordinates
+        let empty = Coordinates::empty();
+        assert_eq!(empty.to_string(), "(empty)");
     }
     
     #[test]
@@ -405,5 +643,22 @@ mod tests {
         coords.move_toward(&target, 5.0 * 2.0_f32.sqrt());
         assert!((coords.get(0).unwrap() - 10.0).abs() < 0.0001);
         assert!((coords.get(1).unwrap() - 10.0).abs() < 0.0001);
+    }
+    
+    #[test]
+    fn test_iterator() {
+        let coords = Coordinates::new_3d(1.0, 2.0, 3.0);
+        
+        // Test iterator
+        let mut iter_values = Vec::new();
+        for value in &coords {
+            iter_values.push(*value);
+        }
+        
+        assert_eq!(iter_values, vec![1.0, 2.0, 3.0]);
+        
+        // Test consuming iterator
+        let values: Vec<f32> = coords.into_iter().collect();
+        assert_eq!(values, vec![1.0, 2.0, 3.0]);
     }
 } 
